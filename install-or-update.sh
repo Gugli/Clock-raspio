@@ -16,4 +16,4 @@ then
 	apt-get --yes install ansible
 fi
 
-ansible-playbook 
+ansible-playbook --inventory-file "$DIR/files/inventory" "$DIR/files/playbook.yml"

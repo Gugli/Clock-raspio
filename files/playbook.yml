@@ -1,0 +1,10 @@
+---
+- hosts: all
+  tasks:
+  - name: install requirements
+    apt: name={{item}}
+    become: yes
+    with_items: 
+    - python
+    - mpd
+    - mpc
