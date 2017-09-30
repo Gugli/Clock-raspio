@@ -13,6 +13,7 @@ Switch on your Raspberry Pi
 
 2 - System
 
+You will need to plug a screen and a keyboard to your Raspberry Pi
 Login using the default account "pi" and the password "raspberry"
 Run the following commands:
     apt-get update
@@ -22,3 +23,8 @@ Run the following commands:
     
 
 II - Update
+
+You will need to plug a screen and a keyboard to your Raspberry Pi
+Login using the default account "pi" and the password "raspberry"
+Run the following command:
+    ./clock-raspio/install-or-update.sh
