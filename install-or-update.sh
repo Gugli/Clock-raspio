@@ -2,6 +2,12 @@
 
 DIR="$( dirname "${BASH_SOURCE[0]}" )"
 
+if test -n $(which git)
+then
+	cd "$DIR"
+	git pull --rebase
+fi
+
 if test -z $(which ansible-playbook)
 then
 	echo "deb http://ppa.launchpad.net/ansible/ansible/uubuntu trusty main" > /etc/apt/sources.list.d/ansible.conf
