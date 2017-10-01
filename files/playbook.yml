@@ -1,10 +1,31 @@
 ---
 - hosts: all
+  vars:
+    - name: "clock-raspio"
+    - file: "clock-raspio-service.py"
+    - service_file: "clock-raspio.service"
   tasks:
-  - name: install requirements
-    apt: name={{item}}
+  - name:   Install requirements
+    apt:    name={{item}}
     become: yes
     with_items: 
     - python
     - mpd
     - mpc
+  - name:       Use PWM mode 2 for better sound quality
+    lineinfile: dest='/boot/config.txt' line='audio_pwm_mode=2'
+    become:     yes
+  - name:   Create user
+    user:   name={{name}} group=nogroup system=yes createhome=no
+    become: yes
+  - name:   Install {{name}}
+    copy:   src="{{file}}" dest="/usr/sbin/{{file}}" owner=root group=root mode='ugo=rx'
+    become: yes
+  - name:   Install {{name}} service
+    copy:   src="{{service_file}}" dest="/etc/systemd/system/{{service_file}}"
+    become: yes
+  - name:   Create var/lib folder
+    file:   path=/var/lib/{{name}} owner={{name}} group=nogroup mode='u=rwx,g=rx,o=rx' state=directory
+  - name:    Enable and start {{name}} service
+    systemd: daemon_reload=yes name={{service_file}} enabled=yes state=started
+    become:  yes

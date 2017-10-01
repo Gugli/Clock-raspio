@@ -1,0 +1,13 @@
+[Unit]
+Description=Clock-Raspio service
+After=syslog.target network.target
+
+[Service]
+Type=simple
+User=clock-raspio
+PIDFile=/var/lib/clock-raspio/service.pid
+Restart=always
+ExecStart=/usr/sbin/clock-raspio-service.py
+
+[Install]
+WantedBy=default.target
