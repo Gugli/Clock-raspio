@@ -10,6 +10,7 @@
     become: yes
     with_items: 
     - python
+    - python-jinja2
     - mpd
     - mpc
   - name:       Use PWM mode 2 for better sound quality

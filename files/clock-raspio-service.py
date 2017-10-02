@@ -9,12 +9,17 @@ import json
 import pickle
 import shutil
 import datetime
+import jinja2
+import md5
 
 SOUNDOUT_PERIOD = 1
 CONFIG_SAVE_PERIOD = 30
-#CONFIG_FILE_PATH = '/var/lib/clock-raspio/config.json'
-#SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
-CONFIG_FILE_PATH = 'C:\\Users\\Gugli\\Desktop\\config.json'
+CONFIG_FILE_PATH = '/var/lib/clock-raspio/config.json'
+SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
+
+EXAMPLE_FILE_PATH   = SHARE_FOLDER_PATH + 'wind-chimes_by_inspectorj.flac'
+CSS_FILE_PATH       = SHARE_FOLDER_PATH + 'stylesheet.css'
+TEMPLATE_FILE_PATH  = SHARE_FOLDER_PATH + 'template.html'
 
 class SignalHandler:
     def __init__(self):
@@ -26,23 +31,73 @@ class SignalHandler:
             
 
 class WebadminHandler(http.server.BaseHTTPRequestHandler):
-    def _set_headers(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html')
-        self.end_headers()
-
+    
+    POST_SNOOZE        = 1
+    
+    GET_STYLESHEET      = 1
+    GET_INDEX           = 2
+    
+    PATHS_FILES = '/files/'
+    
+    PATHS_POST = {
+        '/snooze'       : POST_SNOOZE,
+    }
+    
+    PATHS_GET = {
+        '/stylesheet.css'       : GET_STYLESHEET,
+        '/index.htm'            : GET_INDEX,
+        '/index.html'           : GET_INDEX,
+        '/'                     : GET_INDEX
+    }
+        
+        
+    logger = None
+    template_index = None
+    contents_stylesheet = None
+    
+    def log_message(self, format, *args):
+        self.logger.info(format, *args)
+    
     def do_GET(self):
-        self._set_headers()
-        self.wfile.write(b"<html><body><h1>hi!</h1></body></html>")
-
+        if self.path in self.PATHS_GET:   
+            operation = self.PATHS_GET[self.path] 
+            if operation == self.GET_STYLESHEET:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/css')
+                self.end_headers()
+                self.wfile.write(self.contents_stylesheet)
+            elif operation == self.GET_INDEX:   
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                self.wfile.write(self.template_index.render().encode('utf-8'))
+        elif self.path.startswith(self.PATHS_FILES):
+            subpath = self.path[len(self.PATHS_FILES)]
+            self.send_response(200)
+            self.end_headers()
+        else:
+            self.send_error(404)
+            self.end_headers()
+        
     def do_HEAD(self):
-        self._set_headers()
+        self.send_response(200)
+        self.end_headers()
         
     def do_POST(self):
-        # Doesn't do anything with posted data
-        self._set_headers()
-        self.wfile.write(b"<html><body><h1>POST!</h1></body></html>")
-
+        if self.path in self.PATHS_POST:         
+            operation = self.PATHS_POST[self.path]
+            if operation == self.POST_SNOOZE:
+                pass
+            self.send_response(200)
+            self.end_headers()
+        elif self.path.startswith(self.PATHS_FILES):
+            subpath = self.path[len(self.PATHS_FILES)]
+            self.send_response(200)
+            self.end_headers()
+        else:     
+            self.send_error(404)
+            self.end_headers()
+        
 class ConfigTimeslot:
     def __init__(self, set_sensible_default = False):
         self.begin_hour       = 0
@@ -59,6 +114,16 @@ class ConfigTimeslot:
             self.duration         = 3600
             self.fade_in_duration = 600
             self.playlist_name    = 'Default playlist'
+        
+    def get_id(self):    
+        m = md5.new()
+        m.update('{0}'.format(self.begin_hour))
+        m.update('{0}'.format(self.begin_minute))
+        m.update('{0}'.format(self.begin_day))
+        m.update('{0}'.format(self.duration))
+        m.update('{0}'.format(self.fade_in_duration))
+        m.update(self.playlist_name)
+        return m.digest()
         
     def to_json(self):
         dct = {}
@@ -155,8 +220,7 @@ class ConfigPlaylist:
     def __init__(self, set_sensible_default = False):
         self.items = []
         if set_sensible_default:
-            self.items.append('alarm01.mp3')
-            self.items.append('alarm02.mp3')
+            self.items.append(EXAMPLE_FILE_PATH)
         
     def to_json(self):
         dct = {}
@@ -226,6 +290,11 @@ class Config:
         current_profile = self.profiles[self.current_profile_name]
         return current_profile.get_current_timeslot(now)
     
+    def get_playlist_from_timeslot(self, timeslot):
+        if not timeslot.playlist_name in self.playlists:
+            return None
+        return self.playlists[timeslot.playlist_name]
+        
 class ConfigDecoder:
     def __call__(self, dct):
         config = Config()
@@ -262,14 +331,14 @@ def config_save(logger, path, config):
         
 def audio_set_volume(percent):
     pass
-       
+    
+def audio_set_playlist(playlist):
+    pass
+    
+def audio_play()       
+    pass
+    
 def main_loop():
-    webadmin_server = http.server.HTTPServer( server_address=('', 80), RequestHandlerClass=WebadminHandler )
-    webadmin_server.timeout = 0.1
-    
-    signal_handler = SignalHandler()
-    signal.signal(signal.SIGTERM, signal_handler)
-    
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
     logging_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -281,6 +350,19 @@ def main_loop():
     logging_stderr.setLevel(logging.ERROR)
     logger.addHandler(logging_stdout)
     logger.addHandler(logging_stderr)
+    
+    WebadminHandler.logger = logger
+    with open(CSS_FILE_PATH, 'rb') as file:
+        WebadminHandler.contents_stylesheet = file.read()
+    with open(TEMPLATE_FILE_PATH, 'rb') as file:
+        WebadminHandler.template_index = jinja2.Template(file.read().decode('utf-8'))
+    
+    webadmin_server = http.server.HTTPServer( server_address=('', 80), RequestHandlerClass=WebadminHandler )
+    webadmin_server.timeout = 0.1
+    
+    signal_handler = SignalHandler()
+    signal.signal(signal.SIGTERM, signal_handler)
+    
 
     config = config_load(logger, CONFIG_FILE_PATH)
     # imediately save config to apply format updates
@@ -313,10 +395,16 @@ def main_loop():
             # Check if we should be playing
             result = config.get_current_timeslot(now)
             if result != None:
-                logger.info('Updating sound player')
                 (current_timeslot, duration_percent, fade_in_percent ) = result
+                logger.info('Updating sound player')
                 audio_set_volume( fade_in_percent )
-                previous_timeslot_id = current_timeslot.id
+                new_timeslot_id = current_timeslot.get_id()
+                if new_timeslot_id != previous_timeslot_id:
+                    previous_timeslot_id = new_timeslot_id
+                    # set current playlist
+                    audio_set_playlist( config.get_playlist_from_timeslot(current_timeslot) )                    
+                    # start playback
+                    audio_play()
             else:
                 previous_timeslot_id = None
                     
