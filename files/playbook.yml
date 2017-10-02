@@ -20,7 +20,9 @@
     become: yes
   - name:   Install {{name}}
     copy:   src="{{file}}" dest="/usr/sbin/{{file}}" owner=root group=root mode='ugo=rx'
-    become: yes
+  - name:   Install {{name}} resources
+    synchronize:   src="{{file}}" dest="/usr/share/{{name}}/" owner=root group=root mode='ugo=r'
+    become:        yes
   - name:   Install {{name}} service
     copy:   src="{{service_file}}" dest="/etc/systemd/system/{{service_file}}"
     become: yes
