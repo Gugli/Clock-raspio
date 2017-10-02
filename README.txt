@@ -30,3 +30,12 @@ Switch on your Raspberry Pi
 Login using the default account "pi" and the password "raspberry"
 Run the following command:
     sudo ./clock-raspio/install-or-update.sh
+    
+III - Credits
+
+WindChimes-a by InspectorJ from freesound https://www.jshaw.co.uk/sfx
+If you feel like changing the tune, do not hesitate to pay the 10 pounds he charges for his whole sound collection. It's worth every penny. If you're broke, you can use them for free !
+
+If you feel like donating for this project:
+ - select the amount you'd like to donate, 
+ - send it to a charity of your choice, possibly something like Unicef, or Adainitiative, or BlackGirlsCode. It's the best way to reward me.
