@@ -23,7 +23,7 @@ LIB_FOLDER_PATH = 'C:\\Users\\Gugli\\Desktop\\'
 SHARE_FOLDER_PATH = 'D:\\Documents\\Programmation\\clock-raspio\\files\\share\\'
 
 UPDATED_PROGRAM_FILE_NAME    = 'clock-raspio.py'
-UPDATED_CSS_FILE_NAME        = 'stylesheet.css',
+UPDATED_CSS_FILE_NAME        = 'stylesheet.css'
 UPDATED_TEMPLATE_FILE_NAME   = 'template.html'
 
 UPDATE_URLS = {
@@ -405,6 +405,9 @@ def main_loop(css_file_path, template_file_path):
     logger.addHandler(logging_stdout)
     logger.addHandler(logging_stderr)
     
+    logger.info('Starting daemon')
+    logger.info('Templates are {0} {1}'.format(css_file_path, template_file_path) )
+    
     signal_handler = SignalHandler()
     signal.signal(signal.SIGTERM, signal_handler)
     
@@ -425,8 +428,6 @@ def main_loop(css_file_path, template_file_path):
     webadmin_server = http.server.HTTPServer( server_address=('', 80), RequestHandlerClass=WebadminHandler )
     webadmin_server.timeout = 0.1
     
-    logger.info('Starting daemon')
-    logger.info('Templates are {0} {1}'.format(css_file_path, template_file_path) )
     while True:    
         now = time.time()
         
@@ -482,6 +483,6 @@ if __name__ == "__main__":
         spec = importlib.util.spec_from_file_location("updated", LIB_FOLDER_PATH + UPDATED_PROGRAM_FILE_NAME)
         foo = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(foo)
-        foo.main_loop(UPDATED_CSS_FILE_NAME, UPDATED_TEMPLATE_FILE_NAME)
+        foo.main_loop(LIB_FOLDER_PATH + UPDATED_CSS_FILE_NAME, LIB_FOLDER_PATH + UPDATED_TEMPLATE_FILE_NAME)
     else:
         main_loop(CSS_FILE_PATH, TEMPLATE_FILE_PATH)
