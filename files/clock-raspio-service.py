@@ -17,10 +17,8 @@ import subprocess
 SOUNDOUT_PERIOD = 1
 CONFIG_SAVE_PERIOD = 30
 DEVEL_MODE = True
-#LIB_FOLDER_PATH = '/var/lib/clock-raspio/'
-#SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
-LIB_FOLDER_PATH = 'C:\\Users\\Gugli\\Desktop\\'
-SHARE_FOLDER_PATH = 'D:\\Documents\\Programmation\\clock-raspio\\files\\share\\'
+LIB_FOLDER_PATH = '/var/lib/clock-raspio/'
+SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
 
 UPDATED_PROGRAM_FILE_NAME    = 'clock-raspio.py'
 UPDATED_CSS_FILE_NAME        = 'stylesheet.css'
