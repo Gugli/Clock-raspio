@@ -10,16 +10,33 @@ import pickle
 import shutil
 import datetime
 import jinja2
-import md5
+import hashlib
+import requests
+import subprocess 
 
 SOUNDOUT_PERIOD = 1
 CONFIG_SAVE_PERIOD = 30
-CONFIG_FILE_PATH = '/var/lib/clock-raspio/config.json'
-SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
+DEVEL_MODE = True
+#LIB_FOLDER_PATH = '/var/lib/clock-raspio/'
+#SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
+LIB_FOLDER_PATH = 'C:\\Users\\Gugli\\Desktop\\'
+SHARE_FOLDER_PATH = 'D:\\Documents\\Programmation\\clock-raspio\\files\\share\\'
 
-EXAMPLE_FILE_PATH   = SHARE_FOLDER_PATH + 'wind-chimes_by_inspectorj.flac'
-CSS_FILE_PATH       = SHARE_FOLDER_PATH + 'stylesheet.css'
-TEMPLATE_FILE_PATH  = SHARE_FOLDER_PATH + 'template.html'
+UPDATED_PROGRAM_FILE_NAME    = 'clock-raspio.py'
+UPDATED_CSS_FILE_NAME        = 'stylesheet.css',
+UPDATED_TEMPLATE_FILE_NAME   = 'template.html'
+
+UPDATE_URLS = {
+   'clock-raspio.py' : 'https://raw.githubusercontent.com/Gugli/clock-raspio/master/files/clock-raspio-service.py',
+   'stylesheet.css'  : 'https://raw.githubusercontent.com/Gugli/clock-raspio/master/files/share/stylesheet.css',
+   'template.html'   : 'https://raw.githubusercontent.com/Gugli/clock-raspio/master/files/share/template.html'
+}
+
+
+CONFIG_FILE_PATH        = LIB_FOLDER_PATH + 'config.json'
+EXAMPLE_FILE_PATH       = SHARE_FOLDER_PATH + 'wind-chimes_by_inspectorj.flac'
+CSS_FILE_PATH           = SHARE_FOLDER_PATH + 'stylesheet.css'
+TEMPLATE_FILE_PATH      = SHARE_FOLDER_PATH + 'template.html'
 
 class SignalHandler:
     def __init__(self):
@@ -33,6 +50,7 @@ class SignalHandler:
 class WebadminHandler(http.server.BaseHTTPRequestHandler):
     
     POST_SNOOZE        = 1
+    POST_UPDATE        = 2
     
     GET_STYLESHEET      = 1
     GET_INDEX           = 2
@@ -41,6 +59,7 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
     
     PATHS_POST = {
         '/snooze'       : POST_SNOOZE,
+        '/update'       : POST_UPDATE,
     }
     
     PATHS_GET = {
@@ -52,6 +71,8 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
         
         
     logger = None
+    config = None
+    state = None
     template_index = None
     contents_stylesheet = None
     
@@ -70,7 +91,7 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                self.wfile.write(self.template_index.render().encode('utf-8'))
+                self.wfile.write(self.template_index.render( display_update_button = DEVEL_MODE).encode('utf-8'))
         elif self.path.startswith(self.PATHS_FILES):
             subpath = self.path[len(self.PATHS_FILES)]
             self.send_response(200)
@@ -87,7 +108,9 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
         if self.path in self.PATHS_POST:         
             operation = self.PATHS_POST[self.path]
             if operation == self.POST_SNOOZE:
-                pass
+                self.state.snooze()
+            elif operation == self.POST_UPDATE:
+                self.state.request_update()
             self.send_response(200)
             self.end_headers()
         elif self.path.startswith(self.PATHS_FILES):
@@ -116,13 +139,13 @@ class ConfigTimeslot:
             self.playlist_name    = 'Default playlist'
         
     def get_id(self):    
-        m = md5.new()
-        m.update('{0}'.format(self.begin_hour))
-        m.update('{0}'.format(self.begin_minute))
-        m.update('{0}'.format(self.begin_day))
-        m.update('{0}'.format(self.duration))
-        m.update('{0}'.format(self.fade_in_duration))
-        m.update(self.playlist_name)
+        m = hashlib.md5()
+        m.update('{0}'.format(self.begin_hour)      .encode('utf-8'))
+        m.update('{0}'.format(self.begin_minute)    .encode('utf-8'))
+        m.update('{0}'.format(self.begin_day)       .encode('utf-8'))
+        m.update('{0}'.format(self.duration)        .encode('utf-8'))
+        m.update('{0}'.format(self.fade_in_duration).encode('utf-8'))
+        m.update(self.playlist_name.encode('utf-8'))
         return m.digest()
         
     def to_json(self):
@@ -187,15 +210,15 @@ class ConfigTimetable:
         elif self.period == self.PERIOD_ONEWEEK:  current_day = (isoday - 1)
         elif self.period == self.PERIOD_TWOWEEKS: current_day = (isoday - 1) + (((isoweek-1)%2)*7)
         elif self.period == self.PERIOD_ONEMONTH: current_day = nowdt.date().day
-        current_s = nowdt.hour * 3600 + nowdt.minute *60
+        current_s = nowdt.hour * 3600 + nowdt.minute *60 + nowdt.second
         for timeslot in self.timeslots:
             matches_day = timeslot.begin_day == current_day
             timeslot_begin_s = (timeslot.begin_hour *3600 + timeslot.begin_minute * 60)
             matches_s = timeslot_begin_s <= current_s and current_s < timeslot_begin_s + timeslot.duration
             if( matches_day and matches_s ):
-                fade_in_percent = (current_s - timeslot_begin_s) / (timeslot.fade_in_duration - timeslot_begin_s)
+                fade_in_percent = (current_s - timeslot_begin_s) / (timeslot.fade_in_duration)
                 if fade_in_percent >= 1. : fade_in_percent = 1.
-                duration_percent = (current_s - timeslot_begin_s) / (timeslot.duration - timeslot_begin_s)
+                duration_percent = (current_s - timeslot_begin_s) / (timeslot.duration)
                 return (timeslot, duration_percent, fade_in_percent)
         return None
 
@@ -211,7 +234,7 @@ class ConfigProfile:
     def from_json(self, dct):
         if 'timetable' in dct: 
             self.timetable = ConfigTimetable()
-            self.timetable.from_json(dct)
+            self.timetable.from_json(dct['timetable'])
         
     def get_current_timeslot(self, now):
         return self.timetable.get_current_timeslot(now)
@@ -239,7 +262,8 @@ class Config:
     def __init__(self, set_sensible_default = False):
         self.profiles = {}        
         self.current_profile_name = ''
-        self.playlists = {}        
+        self.playlists = {}       
+        self.snooze_duration = 5*60
         
         if set_sensible_default:           
             profile_work = ConfigProfile(set_sensible_default = set_sensible_default)    
@@ -256,6 +280,7 @@ class Config:
     def to_json(self):
         dct = {}
         dct['current_profile_name'] = self.current_profile_name
+        dct['snooze_duration'] = self.snooze_duration
         dct['profiles'] = {}
         for profile_name in self.profiles:            
             dct['profiles'][profile_name] = self.profiles[profile_name].to_json()
@@ -268,6 +293,9 @@ class Config:
     def from_json(self, dct):
         if 'current_profile_name' in dct:
             self.current_profile_name = dct['current_profile_name']
+            
+        if 'snooze_duration' in dct:
+            self.snooze_duration = int(dct['snooze_duration'])
             
         if 'profiles' in dct:
             dct_profiles = dct['profiles']
@@ -282,7 +310,7 @@ class Config:
                 playlist = ConfigPlaylist()
                 playlist.from_json(dct_playlists[dct_playlist])
                 self.playlists[dct_playlist] = playlist
-            
+                
     def get_current_timeslot(self, now):
         if not self.current_profile_name in self.profiles:
             return None
@@ -304,7 +332,7 @@ class ConfigDecoder:
 class ConfigEncoder:
     def __call__(self, object):
         return object.to_json()      
-    
+        
 def config_load(logger, path):    
     # no file return new config
     if not os.path.isfile(path):
@@ -327,18 +355,44 @@ def config_save(logger, path, config):
     with open(path, "w") as file:
         config_encoder = ConfigEncoder()
         dct = config_encoder(config)
-        json.dump(dct, file)
+        json.dump(dct, file, sort_keys=True, indent=4, separators=(',', ': '))
         
-def audio_set_volume(percent):
-    pass
+def audio_set_volume(logger, percent):
+    logger.info('Audio : set volume at {0}'.format(percent))     
+    if os.name != 'nt': return
     
-def audio_set_playlist(playlist):
-    pass
+def audio_set_playlist(logger, playlist):
+    logger.info('Audio : set playlist') 
+    if os.name != 'nt': return
     
-def audio_play()       
-    pass
+def audio_play(logger):     
+    logger.info('Audio : play')  
+    if os.name != 'nt': return
     
-def main_loop():
+def update_myself(logger):     
+    logger.info('Updating myself')  
+    for file_name in UPDATE_URLS:
+        with open(LIB_FOLDER_PATH + file_name, "wb") as file:
+            response = requests.get(UPDATE_URLS[file_name])
+            file.write(response.content)
+    
+class State:
+    def __init__(self):
+        self.latest_snooze_time         = 0
+        self.latest_soundout_tick      = time.time()
+        self.config_save_latest_tick   = time.time()
+        self.previous_timeslot_id      = None
+        self.previous_volume           = None
+        self.config_save_requested     = False
+        self.update_requested          = False
+        
+    def snooze(self):
+        self.latest_snooze_time = time.time()
+        
+    def request_update(self):
+        self.update_requested = True
+        
+def main_loop(css_file_path, template_file_path):
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
     logging_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -351,28 +405,28 @@ def main_loop():
     logger.addHandler(logging_stdout)
     logger.addHandler(logging_stderr)
     
+    signal_handler = SignalHandler()
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    config = config_load(logger, CONFIG_FILE_PATH)
+    # imediately save config to apply format updates
+    config_save(logger, CONFIG_FILE_PATH, config)
+    
+    state = State()
+    
     WebadminHandler.logger = logger
-    with open(CSS_FILE_PATH, 'rb') as file:
+    WebadminHandler.config = config
+    WebadminHandler.state = state
+    with open(css_file_path, 'rb') as file:
         WebadminHandler.contents_stylesheet = file.read()
-    with open(TEMPLATE_FILE_PATH, 'rb') as file:
+    with open(template_file_path, 'rb') as file:
         WebadminHandler.template_index = jinja2.Template(file.read().decode('utf-8'))
     
     webadmin_server = http.server.HTTPServer( server_address=('', 80), RequestHandlerClass=WebadminHandler )
     webadmin_server.timeout = 0.1
     
-    signal_handler = SignalHandler()
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-
-    config = config_load(logger, CONFIG_FILE_PATH)
-    # imediately save config to apply format updates
-    config_save(logger, CONFIG_FILE_PATH, config)
-    
     logger.info('Starting daemon')
-    latest_soundout_tick = 0
-    previous_timeslot_id = None
-    config_save_latest_tick = time.time()
-    config_save_requested = False
+    logger.info('Templates are {0} {1}'.format(css_file_path, template_file_path) )
     while True:    
         now = time.time()
         
@@ -384,31 +438,50 @@ def main_loop():
         webadmin_server.handle_request()
                 
         # save config
-        if config_save_requested and now > config_save_latest_tick + CONFIG_SAVE_PERIOD:
-            config_save_requested = False
-            config_save_latest_tick = now
+        if state.config_save_requested and now > state.config_save_latest_tick + CONFIG_SAVE_PERIOD:
+            state.config_save_requested = False
+            state.config_save_latest_tick = now
             config_save(logger, CONFIG_FILE_PATH, config)
+            
+        if DEVEL_MODE and state.update_requested:
+            update_myself(logger)
+            break
                 
         # Soundout
-        if now > latest_soundout_tick + SOUNDOUT_PERIOD:
-            latest_soundout_tick = now
+        if now > state.latest_soundout_tick + SOUNDOUT_PERIOD:
+            state.latest_soundout_tick = now
             # Check if we should be playing
             result = config.get_current_timeslot(now)
-            if result != None:
+            is_snoozed = state.latest_snooze_time != 0 and state.latest_snooze_time <= now and now < state.latest_snooze_time + self.snooze_duration
+            if result != None and not is_snoozed:
                 (current_timeslot, duration_percent, fade_in_percent ) = result
-                logger.info('Updating sound player')
-                audio_set_volume( fade_in_percent )
+                
+                new_volume = int(fade_in_percent*100)
+                if new_volume != state.previous_volume:
+                    state.previous_volume = new_volume
+                    audio_set_volume( logger, new_volume )
+                
                 new_timeslot_id = current_timeslot.get_id()
-                if new_timeslot_id != previous_timeslot_id:
-                    previous_timeslot_id = new_timeslot_id
+                if new_timeslot_id != state.previous_timeslot_id:
+                    state.previous_timeslot_id = new_timeslot_id
                     # set current playlist
-                    audio_set_playlist( config.get_playlist_from_timeslot(current_timeslot) )                    
+                    audio_set_playlist( logger, config.get_playlist_from_timeslot(current_timeslot) )                    
                     # start playback
-                    audio_play()
+                    audio_play(logger)
             else:
-                previous_timeslot_id = None
+                state.previous_timeslot_id = None
                     
+    logger.info('Saving config')
+    config_save(logger, CONFIG_FILE_PATH, config)
     logger.info('Exiting daemon')
 
 if __name__ == "__main__":
-    main_loop()
+    if DEVEL_MODE and os.path.isfile(LIB_FOLDER_PATH + UPDATED_PROGRAM_FILE_NAME):
+        print('DEVEL MODE : RUNNING UPDATED VERSION')
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("updated", LIB_FOLDER_PATH + UPDATED_PROGRAM_FILE_NAME)
+        foo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(foo)
+        foo.main_loop(UPDATED_CSS_FILE_NAME, UPDATED_TEMPLATE_FILE_NAME)
+    else:
+        main_loop(CSS_FILE_PATH, TEMPLATE_FILE_PATH)

@@ -1,6 +1,14 @@
 <html>
 <body>
 <h1>Clock-raspio</h1>
-{{ 'This is a text' }}
+
+<form action="/snooze" method="POST">
+<input type="submit" value="Snooze">
+</form>
+{% if display_update_button %}
+<form action="/update" method="POST">
+<input type="submit" value="Install updates and restart">
+</form>
+{% endif %}
 </body>
 </html>
