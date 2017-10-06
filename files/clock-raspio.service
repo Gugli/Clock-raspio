@@ -4,7 +4,7 @@ After=syslog.target network.target
 
 [Service]
 Type=simple
-User=clock-raspio
+User=root
 PIDFile=/var/lib/clock-raspio/service.pid
 Restart=always
 ExecStart=/usr/sbin/clock-raspio-service.py

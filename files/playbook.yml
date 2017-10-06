@@ -16,15 +16,15 @@
   - name:       Use PWM mode 2 for better sound quality
     lineinfile: dest='/boot/config.txt' line='audio_pwm_mode=2'
     become:     yes
-  - name:   Create user
-    user:   name={{name}} group=nogroup system=yes createhome=no groups=www-data
-    become: yes
   - name:   Create var/lib folder
-    file:   path=/var/lib/{{name}} owner={{name}} group=nogroup mode='u=rwx,g=rx,o=rx' state=directory
+    file:   path=/var/lib/{{name}} owner=root group=root mode='u=rwx,g=rx,o=rx' state=directory
+    become:  yes
   - name:   Create usr/share folder
     file:   path=/usr/share/{{name}} owner=root group=root mode='u=rwx,g=rx,o=rx' state=directory
+    become: yes
   - name:   Install {{name}}
     copy:   src="{{file}}" dest="/usr/sbin/{{file}}" owner=root group=root mode='ugo=rx'
+    become: yes
   - name:   Install {{name}} resources
     copy:   src="share/{{item}}" dest="/usr/share/{{name}}/{{item}}" owner=root group=root mode='ugo=r'
     become: yes
@@ -33,7 +33,7 @@
       - stylesheet.css
       - wind-chimes_by_inspectorj.flac
   - name:   Install {{name}} service
-    copy:   src="{{service_file}}" dest="/etc/systemd/system/{{service_file}}"
+    copy:   src="{{service_file}}" dest="/etc/systemd/system/{{service_file}}" owner=root group=root mode='u=rw,go=r'
     become: yes
   - name:    Enable and start {{name}} service
     systemd: daemon_reload=yes name={{service_file}} enabled=yes state=started
