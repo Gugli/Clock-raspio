@@ -19,6 +19,9 @@
   - name:   Create var/lib folder
     file:   path=/var/lib/{{name}} owner=root group=root mode='u=rwx,g=rx,o=rx' state=directory
     become:  yes
+  - name:   Create var/lib/music folder
+    file:   path=/var/lib/{{name}}/music owner=root group=root mode='u=rwx,g=rx,o=rx' state=directory
+    become:  yes
   - name:   Create usr/share folder
     file:   path=/usr/share/{{name}} owner=root group=root mode='u=rwx,g=rx,o=rx' state=directory
     become: yes
@@ -31,10 +34,22 @@
     with_items:
       - template.html
       - stylesheet.css
+  - name:   Install {{name}} resources
+    copy:   src="share/{{item}}" dest="/var/lib/{{name}}/music/{{item}}" owner=root group=root mode='ugo=r'
+    become: yes
+    with_items:
       - wind-chimes_by_inspectorj.flac
   - name:   Install {{name}} service
     copy:   src="{{service_file}}" dest="/etc/systemd/system/{{service_file}}" owner=root group=root mode='u=rw,go=r'
     become: yes
+  - name:       Setup MPD directory
+    lineinfile: dest='/etc/mpd.conf' line='music_directory "/var/lib/{{name}}/music"' regexp='^music_directory'
+    become:     yes
+  - name:    Restart MPD
+    service: name=mpd state=restarted
+    become:  yes    
+  - name:    Scan files
+    command: mpc --wait update
   - name:    Enable and start {{name}} service
     systemd: daemon_reload=yes name={{service_file}} enabled=yes state=started
     become:  yes

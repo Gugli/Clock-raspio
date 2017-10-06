@@ -32,7 +32,7 @@ UPDATE_URLS = {
 
 
 CONFIG_FILE_PATH        = LIB_FOLDER_PATH + 'config.json'
-EXAMPLE_FILE_PATH       = SHARE_FOLDER_PATH + 'wind-chimes_by_inspectorj.flac'
+EXAMPLE_FILE_NAME       = 'wind-chimes_by_inspectorj.flac'
 CSS_FILE_PATH           = SHARE_FOLDER_PATH + 'stylesheet.css'
 TEMPLATE_FILE_PATH      = SHARE_FOLDER_PATH + 'template.html'
 
@@ -241,7 +241,7 @@ class ConfigPlaylist:
     def __init__(self, set_sensible_default = False):
         self.items = []
         if set_sensible_default:
-            self.items.append(EXAMPLE_FILE_PATH)
+            self.items.append(EXAMPLE_FILE_NAME)
         
     def to_json(self):
         dct = {}
@@ -365,7 +365,7 @@ def audio_set_playlist(logger, playlist):
     if os.name != 'nt': return
 
     subprocess.call(["mpc", "stop"])
-    subprocess.call(["mpc", "crop"])
+    subprocess.call(["mpc", "clear"])
     for item in playlist.items:
         subprocess.call(["mpc", "add", item])
 
