@@ -357,22 +357,22 @@ def config_save(logger, path, config):
         
 def audio_set_volume(logger, percent):
     logger.info('Audio : set volume at {0}'.format(percent))     
-    if os.name != 'nt': return
+    if os.name == 'nt': return
     subprocess.call(["mpc", "vol", str(percent)])
     
 def audio_set_playlist(logger, playlist):
-    logger.info('Audio : set playlist') 
-    if os.name != 'nt': return
-
+    logger.info('Audio : set playlist')
+    if os.name == 'nt': return
     subprocess.call(["mpc", "stop"])
     subprocess.call(["mpc", "clear"])
     for item in playlist.items:
+        logger.info('   - ' + item) 
         subprocess.call(["mpc", "add", item])
 
     
 def audio_play(logger):     
     logger.info('Audio : play')  
-    if os.name != 'nt': return
+    if os.name == 'nt': return
     subprocess.call(["mpc", "repeat", "on"])
     subprocess.call(["mpc", "play"])
 
