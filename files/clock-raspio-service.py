@@ -13,6 +13,8 @@ import jinja2
 import hashlib
 import requests
 import subprocess 
+import re
+import cgi
 
 SOUNDOUT_PERIOD = 1
 CONFIG_SAVE_PERIOD = 30
@@ -44,11 +46,33 @@ class SignalHandler:
         if signum == signal.SIGTERM:
             self.must_leave = True
             
+def timezone_list():
+    process = subprocess.Popen(["timedatectl", "list-timezones"], stdout=subprocess.PIPE)
+    (stdout, stderr) = process.communicate()
+    timezones = {}
+    for line in stdout.splitlines():
+        values = line.decode('utf-8').split('/')
+        if len(values) < 2: continue
+        continent = values[0]
+        zone = values[1]
+        if not continent in timezones:
+            timezones[continent] = []
+        timezones[continent].append(zone)
+    return timezones
+
+def timezone_get():
+    process = subprocess.Popen(["cat", "/etc/timezone"], stdout=subprocess.PIPE)
+    (stdout, stderr) = process.communicate()
+    return stdout.decode('utf-8').strip()
+
+def timezone_set(new_timezone):
+    subprocess.call(["timedatectl", "set-timezone", new_timezone])
 
 class WebadminHandler(http.server.BaseHTTPRequestHandler):
     
     POST_SNOOZE        = 1
     POST_UPDATE        = 2
+    POST_SET_TIMEZONE  = 3
     
     GET_STYLESHEET      = 1
     GET_INDEX           = 2
@@ -58,6 +82,7 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
     PATHS_POST = {
         '/snooze'       : POST_SNOOZE,
         '/update'       : POST_UPDATE,
+        '/set_timezone' : POST_SET_TIMEZONE,
     }
     
     PATHS_GET = {
@@ -89,7 +114,12 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                self.wfile.write(self.template_index.render( display_update_button = DEVEL_MODE).encode('utf-8'))
+                rendered_text = self.template_index.render( 
+                    display_update_button = DEVEL_MODE,
+                    timezone_current = timezone_get(),
+                    timezone_list = timezone_list(),
+                    )
+                self.wfile.write(rendered_text.encode('utf-8'))
         elif self.path.startswith(self.PATHS_FILES):
             subpath = self.path[len(self.PATHS_FILES)]
             self.send_response(200)
@@ -99,16 +129,31 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
         
     def do_HEAD(self):
-        self.send_response(200)
-        self.end_headers()
+        if self.path in self.PATHS_GET:   
+            self.send_response(200)
+            self.end_headers()
+        else:
+            self.send_error(404)
+            self.end_headers()
         
     def do_POST(self):
-        if self.path in self.PATHS_POST:         
+        if self.path in self.PATHS_POST:
             operation = self.PATHS_POST[self.path]
+            ctype, pdict = cgi.parse_header(self.headers.get('content-type'))
+            postvars = {}
+            if ctype == 'multipart/form-data':
+                postvars = cgi.parse_multipart(self.rfile, pdict)
+            elif ctype == 'application/x-www-form-urlencoded':
+                length = int(self.headers.get('content-length'))
+                postvars = cgi.parse_qs(self.rfile.read(length), keep_blank_values=1)
+            print(postvars)
+
             if operation == self.POST_SNOOZE:
                 self.state.snooze()
             elif operation == self.POST_UPDATE:
                 self.state.request_update()
+            elif operation == self.POST_SET_TIMEZONE and b'timezone' in postvars and len(postvars[b'timezone']) > 0:
+                timezone_set(postvars[b'timezone'][0].decode('utf-8'))
             self.send_response(200)
             self.end_headers()
         elif self.path.startswith(self.PATHS_FILES):
@@ -368,7 +413,6 @@ def audio_set_playlist(logger, playlist):
     for item in playlist.items:
         logger.info('   - ' + item) 
         subprocess.call(["mpc", "add", item])
-
     
 def audio_play(logger):     
     logger.info('Audio : play')  
@@ -376,6 +420,11 @@ def audio_play(logger):
     subprocess.call(["mpc", "repeat", "on"])
     subprocess.call(["mpc", "play"])
 
+def audio_stop(logger):     
+    logger.info('Audio : stop')  
+    if os.name == 'nt': return
+    subprocess.call(["mpc", "stop"])
+    subprocess.call(["mpc", "clear"])
     
 def update_myself(logger):     
     logger.info('Updating myself')  
@@ -473,12 +522,12 @@ def main_loop(css_file_path, template_file_path):
                 new_timeslot_id = current_timeslot.get_id()
                 if new_timeslot_id != state.previous_timeslot_id:
                     state.previous_timeslot_id = new_timeslot_id
-                    # set current playlist
-                    audio_set_playlist( logger, config.get_playlist_from_timeslot(current_timeslot) )                    
-                    # start playback
+                    audio_set_playlist( logger, config.get_playlist_from_timeslot(current_timeslot) )
                     audio_play(logger)
             else:
-                state.previous_timeslot_id = None
+                if state.previous_timeslot_id != None:
+                    state.previous_timeslot_id = None
+                    audio_stop(logger)
                     
     logger.info('Saving config')
     config_save(logger, CONFIG_FILE_PATH, config)

@@ -2,9 +2,22 @@
 <body>
 <h1>Clock-raspio</h1>
 
+<h2>Timzones</h2>
+Current timezone is "{{timezone_current}}"
+<form action="set_timezone" method="POST">
+<select name="timezone">
+{% for continent in timezone_list -%}{% for zone in timezone_list[continent] -%}
+<option value="{{continent}}/{{zone}}">{{continent}} - {{zone}}</option>
+{% endfor -%}{% endfor -%}
+</select>
+<input type="submit" value="Set timezone">
+</form>
+
+<h2>Actions</h2>
 <form action="/snooze" method="POST">
 <input type="submit" value="Snooze">
 </form>
+<h2>Expert</h2>
 {% if display_update_button %}
 <form action="/update" method="POST">
 <input type="submit" value="Install updates and restart">
