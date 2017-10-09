@@ -2,6 +2,25 @@
 <body>
 <h1>Clock-raspio</h1>
 
+<h2>Profile : {{config.current_profile_name}}</h2>
+<form action="set_profile" method="POST">
+<select name="profile_name">
+{% for profile_name in config.profiles -%}
+<option value="{{profile_name}}">{{profile_name}}</option>
+{% endfor -%}
+</select>
+<input type="submit" value="Set current profile">
+</form>
+
+<h3>Timetable </h3>
+Period : {{config.profiles[config.current_profile_name].timetable.period}}<br/>
+{% for timeslot in config.profiles[config.current_profile_name].timetable.timeslots %}
+Start time : [{{timeslot.begin_day}}] {{timeslot.begin_hour}}:{{timeslot.begin_minute}}<br/>
+Duration : {{timeslot.duration}}<br/>
+Fade-in duration : {{timeslot.fade_in_duration}}<br/>
+Playlist : {{timeslot.playlist_name}}<br/>
+{% endfor %}
+
 <h2>Timzones</h2>
 Current timezone is "{{timezone_current}}"
 <form action="set_timezone" method="POST">
@@ -17,6 +36,8 @@ Current timezone is "{{timezone_current}}"
 <form action="/snooze" method="POST">
 <input type="submit" value="Snooze">
 </form>
+<h3>Latest snooze time : {{state.latest_snooze_time}}</h3>
+
 <h2>Expert</h2>
 {% if display_update_button %}
 <form action="/update" method="POST">

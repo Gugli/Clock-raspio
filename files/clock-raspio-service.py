@@ -118,6 +118,8 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
                     display_update_button = DEVEL_MODE,
                     timezone_current = timezone_get(),
                     timezone_list = timezone_list(),
+                    config = self.config,
+                    state = self.state
                     )
                 self.wfile.write(rendered_text.encode('utf-8'))
         elif self.path.startswith(self.PATHS_FILES):
@@ -154,7 +156,8 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
                 self.state.request_update()
             elif operation == self.POST_SET_TIMEZONE and b'timezone' in postvars and len(postvars[b'timezone']) > 0:
                 timezone_set(postvars[b'timezone'][0].decode('utf-8'))
-            self.send_response(200)
+            self.send_response(303)
+            self.send_header("Location", "/")
             self.end_headers()
         elif self.path.startswith(self.PATHS_FILES):
             subpath = self.path[len(self.PATHS_FILES)]
@@ -207,8 +210,8 @@ class ConfigTimeslot:
         self.begin_day         = dct['begin_day']       
         self.duration          = dct['duration']        
         self.fade_in_duration  = dct['fade_in_duration']
-        self.playlist_name     = dct['playlist_name']   
-            
+        self.playlist_name     = dct['playlist_name']
+
 class ConfigTimetable:
     PERIOD_ONEDAY = 1
     PERIOD_ONEWEEK = 2
@@ -216,10 +219,10 @@ class ConfigTimetable:
     PERIOD_ONEMONTH = 4
     def __init__(self, set_sensible_default = False):
         self.period = self.PERIOD_ONEDAY
-        self.timeslots = []   
+        self.timeslots = []
         if set_sensible_default:
             self.timeslots.append( ConfigTimeslot(set_sensible_default = set_sensible_default) )
-    
+
     def to_json(self):
         dct = {}
         if   self.period == self.PERIOD_ONEDAY:   dct['period'] = 'PERIOD_ONEDAY'
@@ -230,7 +233,7 @@ class ConfigTimetable:
         for timeslot in self.timeslots:
             dct['timeslots'].append(timeslot.to_json())
         return dct
-        
+ 
     def from_json(self, dct):
         if 'period' in dct: 
             if   dct['period'] == 'PERIOD_ONEDAY':   self.period = self.PERIOD_ONEDAY
@@ -254,6 +257,7 @@ class ConfigTimetable:
         elif self.period == self.PERIOD_TWOWEEKS: current_day = (isoday - 1) + (((isoweek-1)%2)*7)
         elif self.period == self.PERIOD_ONEMONTH: current_day = nowdt.date().day
         current_s = nowdt.hour * 3600 + nowdt.minute *60 + nowdt.second
+        #print( "{0} : {1} : {2} : {3}".format(current_day, nowdt.hour, nowdt.minute, nowdt.second))
         for timeslot in self.timeslots:
             matches_day = timeslot.begin_day == current_day
             timeslot_begin_s = (timeslot.begin_hour *3600 + timeslot.begin_minute * 60)
@@ -484,6 +488,8 @@ def main_loop(css_file_path, template_file_path):
     
     webadmin_server = http.server.HTTPServer( server_address=('', 80), RequestHandlerClass=WebadminHandler )
     webadmin_server.timeout = 0.1
+
+    audio_stop(logger)
     
     while True:    
         now = time.time()
@@ -510,10 +516,10 @@ def main_loop(css_file_path, template_file_path):
             state.latest_soundout_tick = now
             # Check if we should be playing
             result = config.get_current_timeslot(now)
-            is_snoozed = state.latest_snooze_time != 0 and state.latest_snooze_time <= now and now < state.latest_snooze_time + self.snooze_duration
-            if result != None and not is_snoozed:
+            is_snoozed = state.latest_snooze_time != 0 and state.latest_snooze_time <= now and now < state.latest_snooze_time + config.snooze_duration
+            if is_snoozed: result = None
+            if result != None:
                 (current_timeslot, duration_percent, fade_in_percent ) = result
-                
                 new_volume = int(fade_in_percent*100)
                 if new_volume != state.previous_volume:
                     state.previous_volume = new_volume
@@ -528,6 +534,10 @@ def main_loop(css_file_path, template_file_path):
                 if state.previous_timeslot_id != None:
                     state.previous_timeslot_id = None
                     audio_stop(logger)
+
+            # Reset snooze
+            if state.latest_snooze_time != 0 and state.latest_snooze_time + config.snooze_duration <= now:
+                state.latest_snooze_time = 0
                     
     logger.info('Saving config')
     config_save(logger, CONFIG_FILE_PATH, config)
