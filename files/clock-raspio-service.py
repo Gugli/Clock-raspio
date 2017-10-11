@@ -73,6 +73,7 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
     POST_SNOOZE        = 1
     POST_UPDATE        = 2
     POST_SET_TIMEZONE  = 3
+    POST_DISCARD       = 4
     
     GET_STYLESHEET      = 1
     GET_INDEX           = 2
@@ -81,6 +82,7 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
     
     PATHS_POST = {
         '/snooze'       : POST_SNOOZE,
+        '/discard'      : POST_DISCARD,
         '/update'       : POST_UPDATE,
         '/set_timezone' : POST_SET_TIMEZONE,
     }
@@ -152,6 +154,8 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
 
             if operation == self.POST_SNOOZE:
                 self.state.snooze()
+            elif operation == self.POST_DISCARD:
+                self.state.discard()
             elif operation == self.POST_UPDATE:
                 self.state.request_update()
             elif operation == self.POST_SET_TIMEZONE and b'timezone' in postvars and len(postvars[b'timezone']) > 0:
@@ -439,7 +443,9 @@ def update_myself(logger):
     
 class State:
     def __init__(self):
-        self.latest_snooze_time         = 0
+        self.latest_snooze_time        = 0
+        self.discarded_timeslot_id     = None
+        self.discard_requested         = True
         self.latest_soundout_tick      = time.time()
         self.config_save_latest_tick   = time.time()
         self.previous_timeslot_id      = None
@@ -449,6 +455,9 @@ class State:
         
     def snooze(self):
         self.latest_snooze_time = time.time()
+
+    def discard(self):
+        self.discard_requested = True
         
     def request_update(self):
         self.update_requested = True
@@ -515,21 +524,30 @@ def main_loop(css_file_path, template_file_path):
         if now > state.latest_soundout_tick + SOUNDOUT_PERIOD:
             state.latest_soundout_tick = now
             # Check if we should be playing
+            (current_timeslot, duration_percent, fade_in_percent ) = (None, 0, 0)
             result = config.get_current_timeslot(now)
             is_snoozed = state.latest_snooze_time != 0 and state.latest_snooze_time <= now and now < state.latest_snooze_time + config.snooze_duration
             if is_snoozed: result = None
             if result != None:
                 (current_timeslot, duration_percent, fade_in_percent ) = result
+                new_timeslot_id = current_timeslot.get_id()
+                if state.discarded_timeslot_id == new_timeslot_id:
+                    current_timeslot = None
+
+            if current_timeslot != None:
                 new_volume = int(fade_in_percent*100)
                 if new_volume != state.previous_volume:
                     state.previous_volume = new_volume
                     audio_set_volume( logger, new_volume )
                 
-                new_timeslot_id = current_timeslot.get_id()
                 if new_timeslot_id != state.previous_timeslot_id:
                     state.previous_timeslot_id = new_timeslot_id
                     audio_set_playlist( logger, config.get_playlist_from_timeslot(current_timeslot) )
                     audio_play(logger)
+
+                if state.discard_requested:
+                    state.discarded_timeslot_id = new_timeslot_id
+
             else:
                 if state.previous_timeslot_id != None:
                     state.previous_timeslot_id = None

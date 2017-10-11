@@ -22,11 +22,14 @@ Playlist : {{timeslot.playlist_name}}<br/>
 {% endfor %}
 
 <h2>Timzones</h2>
-Current timezone is "{{timezone_current}}"
 <form action="set_timezone" method="POST">
 <select name="timezone">
 {% for continent in timezone_list -%}{% for zone in timezone_list[continent] -%}
+{% if (continent+'/'+zone) == timezone_current -%}
+<option value="{{continent}}/{{zone}}" selected="selected">{{continent}} - {{zone}}</option>
+{% else -%}
 <option value="{{continent}}/{{zone}}">{{continent}} - {{zone}}</option>
+{% endif -%}
 {% endfor -%}{% endfor -%}
 </select>
 <input type="submit" value="Set timezone">
@@ -36,7 +39,9 @@ Current timezone is "{{timezone_current}}"
 <form action="/snooze" method="POST">
 <input type="submit" value="Snooze">
 </form>
-<h3>Latest snooze time : {{state.latest_snooze_time}}</h3>
+<form action="/discard" method="POST">
+<input type="submit" value="Discard">
+</form>
 
 <h2>Expert</h2>
 {% if display_update_button %}
