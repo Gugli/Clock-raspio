@@ -12,7 +12,7 @@ import datetime
 import jinja2
 import hashlib
 import requests
-import subprocess 
+import subprocess
 import re
 import cgi
 
@@ -41,12 +41,13 @@ TEMPLATE_FILE_PATH      = SHARE_FOLDER_PATH + 'template.html'
 class SignalHandler:
     def __init__(self):
         self.must_leave = False
-        
+
     def __call__(self, signum, frame):
         if signum == signal.SIGTERM:
             self.must_leave = True
-            
+
 def timezone_list():
+    if os.name == 'nt': return {"Continent" : ["Timezone1", "Timezone2"]}
     process = subprocess.Popen(["timedatectl", "list-timezones"], stdout=subprocess.PIPE)
     (stdout, stderr) = process.communicate()
     timezones = {}
@@ -61,62 +62,64 @@ def timezone_list():
     return timezones
 
 def timezone_get():
+    if os.name == 'nt': return "Continent/Timezone2"
     process = subprocess.Popen(["cat", "/etc/timezone"], stdout=subprocess.PIPE)
     (stdout, stderr) = process.communicate()
     return stdout.decode('utf-8').strip()
 
 def timezone_set(new_timezone):
+    if os.name == 'nt': return
     subprocess.call(["timedatectl", "set-timezone", new_timezone])
 
 class WebadminHandler(http.server.BaseHTTPRequestHandler):
-    
+
     POST_SNOOZE        = 1
     POST_UPDATE        = 2
     POST_SET_TIMEZONE  = 3
     POST_DISCARD       = 4
-    
+
     GET_STYLESHEET      = 1
     GET_INDEX           = 2
-    
+
     PATHS_FILES = '/files/'
-    
+
     PATHS_POST = {
         '/snooze'       : POST_SNOOZE,
         '/discard'      : POST_DISCARD,
         '/update'       : POST_UPDATE,
         '/set_timezone' : POST_SET_TIMEZONE,
     }
-    
+
     PATHS_GET = {
         '/stylesheet.css'       : GET_STYLESHEET,
         '/index.htm'            : GET_INDEX,
         '/index.html'           : GET_INDEX,
         '/'                     : GET_INDEX
     }
-        
-        
+
+
     logger = None
     config = None
     state = None
     template_index = None
     contents_stylesheet = None
-    
+
     def log_message(self, format, *args):
         self.logger.info(format, *args)
-    
+
     def do_GET(self):
-        if self.path in self.PATHS_GET:   
-            operation = self.PATHS_GET[self.path] 
+        if self.path in self.PATHS_GET:
+            operation = self.PATHS_GET[self.path]
             if operation == self.GET_STYLESHEET:
                 self.send_response(200)
                 self.send_header('Content-type', 'text/css')
                 self.end_headers()
                 self.wfile.write(self.contents_stylesheet)
-            elif operation == self.GET_INDEX:   
+            elif operation == self.GET_INDEX:
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                rendered_text = self.template_index.render( 
+                rendered_text = self.template_index.render(
                     display_update_button = DEVEL_MODE,
                     timezone_current = timezone_get(),
                     timezone_list = timezone_list(),
@@ -131,15 +134,15 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_error(404)
             self.end_headers()
-        
+
     def do_HEAD(self):
-        if self.path in self.PATHS_GET:   
+        if self.path in self.PATHS_GET:
             self.send_response(200)
             self.end_headers()
         else:
             self.send_error(404)
             self.end_headers()
-        
+
     def do_POST(self):
         if self.path in self.PATHS_POST:
             operation = self.PATHS_POST[self.path]
@@ -167,10 +170,10 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
             subpath = self.path[len(self.PATHS_FILES)]
             self.send_response(200)
             self.end_headers()
-        else:     
+        else:
             self.send_error(404)
             self.end_headers()
-        
+
 class ConfigTimeslot:
     def __init__(self, set_sensible_default = False):
         self.begin_hour       = 0
@@ -179,7 +182,7 @@ class ConfigTimeslot:
         self.duration         = 3600
         self.fade_in_duration = 600
         self.playlist_name    = ''
-        
+
         if set_sensible_default:
             self.begin_hour       = 7
             self.begin_minute     = 15
@@ -187,8 +190,8 @@ class ConfigTimeslot:
             self.duration         = 3600
             self.fade_in_duration = 600
             self.playlist_name    = 'Default playlist'
-        
-    def get_id(self):    
+
+    def get_id(self):
         m = hashlib.md5()
         m.update('{0}'.format(self.begin_hour)      .encode('utf-8'))
         m.update('{0}'.format(self.begin_minute)    .encode('utf-8'))
@@ -197,7 +200,7 @@ class ConfigTimeslot:
         m.update('{0}'.format(self.fade_in_duration).encode('utf-8'))
         m.update(self.playlist_name.encode('utf-8'))
         return m.digest()
-        
+
     def to_json(self):
         dct = {}
         dct['begin_hour']       = self.begin_hour
@@ -207,12 +210,12 @@ class ConfigTimeslot:
         dct['fade_in_duration'] = self.fade_in_duration
         dct['playlist_name']    = self.playlist_name
         return dct
-        
+
     def from_json(self, dct):
-        self.begin_hour        = dct['begin_hour']      
-        self.begin_minute      = dct['begin_minute']    
-        self.begin_day         = dct['begin_day']       
-        self.duration          = dct['duration']        
+        self.begin_hour        = dct['begin_hour']
+        self.begin_minute      = dct['begin_minute']
+        self.begin_day         = dct['begin_day']
+        self.duration          = dct['duration']
         self.fade_in_duration  = dct['fade_in_duration']
         self.playlist_name     = dct['playlist_name']
 
@@ -237,21 +240,21 @@ class ConfigTimetable:
         for timeslot in self.timeslots:
             dct['timeslots'].append(timeslot.to_json())
         return dct
- 
+
     def from_json(self, dct):
-        if 'period' in dct: 
+        if 'period' in dct:
             if   dct['period'] == 'PERIOD_ONEDAY':   self.period = self.PERIOD_ONEDAY
             elif dct['period'] == 'PERIOD_ONEWEEK':  self.period = self.PERIOD_ONEWEEK
             elif dct['period'] == 'PERIOD_TWOWEEKS': self.period = self.PERIOD_TWOWEEKS
             elif dct['period'] == 'PERIOD_ONEMONTH': self.period = self.PERIOD_ONEMONTH
-            
-        if 'timeslots' in dct: 
+
+        if 'timeslots' in dct:
             self.timeslots = []
             for dct_timeslot in dct['timeslots']:
                 timeslot = ConfigTimeslot()
                 timeslot.from_json(dct_timeslot)
                 self.timeslots.append(timeslot)
-            
+
     def get_current_timeslot(self, now):
         nowdt = datetime.datetime.fromtimestamp(now)
         current_day = 0
@@ -276,124 +279,124 @@ class ConfigTimetable:
 class ConfigProfile:
     def __init__(self, set_sensible_default = False):
         self.timetable = ConfigTimetable(set_sensible_default = set_sensible_default)
-        
+
     def to_json(self):
         dct = {}
         dct['timetable'] = self.timetable.to_json()
         return dct
-        
+
     def from_json(self, dct):
-        if 'timetable' in dct: 
+        if 'timetable' in dct:
             self.timetable = ConfigTimetable()
             self.timetable.from_json(dct['timetable'])
-        
+
     def get_current_timeslot(self, now):
         return self.timetable.get_current_timeslot(now)
-        
+
 class ConfigPlaylist:
     def __init__(self, set_sensible_default = False):
         self.items = []
         if set_sensible_default:
             self.items.append(EXAMPLE_FILE_NAME)
-        
+
     def to_json(self):
         dct = {}
         dct['items'] = []
-        for item_name in self.items:            
+        for item_name in self.items:
             dct['items'].append(item_name)
         return dct
-            
-    def from_json(self, dct):    
+
+    def from_json(self, dct):
         if 'items' in dct:
             dct_items = dct['items']
-            for dct_item in dct_items:            
+            for dct_item in dct_items:
                 self.items.append(dct_item)
-                
+
 class Config:
     def __init__(self, set_sensible_default = False):
-        self.profiles = {}        
+        self.profiles = {}
         self.current_profile_name = ''
-        self.playlists = {}       
+        self.playlists = {}
         self.snooze_duration = 5*60
-        
-        if set_sensible_default:           
-            profile_work = ConfigProfile(set_sensible_default = set_sensible_default)    
+
+        if set_sensible_default:
+            profile_work = ConfigProfile(set_sensible_default = set_sensible_default)
             self.profiles['Work'] = profile_work
-            
+
             profile_holidays = ConfigProfile()
-            self.profiles['Holidays'] = profile_holidays            
-            
+            self.profiles['Holidays'] = profile_holidays
+
             playlist_webradio = ConfigPlaylist(set_sensible_default = set_sensible_default)
             self.playlists['Default playlist'] = playlist_webradio
-            
-            self.current_profile_name = 'Work'            
-           
+
+            self.current_profile_name = 'Work'
+
     def to_json(self):
         dct = {}
         dct['current_profile_name'] = self.current_profile_name
         dct['snooze_duration'] = self.snooze_duration
         dct['profiles'] = {}
-        for profile_name in self.profiles:            
+        for profile_name in self.profiles:
             dct['profiles'][profile_name] = self.profiles[profile_name].to_json()
         dct['playlists'] = {}
-        for playlist_name in self.playlists:            
+        for playlist_name in self.playlists:
             dct['playlists'][playlist_name] = self.playlists[playlist_name].to_json()
-            
+
         return dct
-        
+
     def from_json(self, dct):
         if 'current_profile_name' in dct:
             self.current_profile_name = dct['current_profile_name']
-            
+
         if 'snooze_duration' in dct:
             self.snooze_duration = int(dct['snooze_duration'])
-            
+
         if 'profiles' in dct:
             dct_profiles = dct['profiles']
             for dct_profile in dct_profiles:
                 profile = ConfigProfile()
                 profile.from_json(dct_profiles[dct_profile])
                 self.profiles[dct_profile] = profile
-                
+
         if 'playlists' in dct:
             dct_playlists = dct['playlists']
             for dct_playlist in dct_playlists:
                 playlist = ConfigPlaylist()
                 playlist.from_json(dct_playlists[dct_playlist])
                 self.playlists[dct_playlist] = playlist
-                
+
     def get_current_timeslot(self, now):
         if not self.current_profile_name in self.profiles:
             return None
-            
+
         current_profile = self.profiles[self.current_profile_name]
         return current_profile.get_current_timeslot(now)
-    
+
     def get_playlist_from_timeslot(self, timeslot):
         if not timeslot.playlist_name in self.playlists:
             return None
         return self.playlists[timeslot.playlist_name]
-        
+
 class ConfigDecoder:
     def __call__(self, dct):
         config = Config()
         config.from_json(dct)
         return config
-        
+
 class ConfigEncoder:
     def __call__(self, object):
-        return object.to_json()      
-        
-def config_load(logger, path):    
+        return object.to_json()
+
+def config_load(logger, path):
     # no file return new config
     if not os.path.isfile(path):
         return Config(set_sensible_default = True)
-    
+
     try:
         with open(path, "r") as file:
             config_decoder = ConfigDecoder()
             dct = json.load(file)
-            return config_decoder(dct)  
+            return config_decoder(dct)
     except:
         logger.debug('An error occured while trying to read the config file', exc_info=True)
         # backup file
@@ -407,40 +410,40 @@ def config_save(logger, path, config):
         config_encoder = ConfigEncoder()
         dct = config_encoder(config)
         json.dump(dct, file, sort_keys=True, indent=4, separators=(',', ': '))
-        
+
 def audio_set_volume(logger, percent):
-    logger.info('Audio : set volume at {0}'.format(percent))     
+    logger.info('Audio : set volume at {0}'.format(percent))
     if os.name == 'nt': return
     subprocess.call(["mpc", "vol", str(percent)])
-    
+
 def audio_set_playlist(logger, playlist):
     logger.info('Audio : set playlist')
     if os.name == 'nt': return
     subprocess.call(["mpc", "stop"])
     subprocess.call(["mpc", "clear"])
     for item in playlist.items:
-        logger.info('   - ' + item) 
+        logger.info('   - ' + item)
         subprocess.call(["mpc", "add", item])
-    
-def audio_play(logger):     
-    logger.info('Audio : play')  
+
+def audio_play(logger):
+    logger.info('Audio : play')
     if os.name == 'nt': return
     subprocess.call(["mpc", "repeat", "on"])
     subprocess.call(["mpc", "play"])
 
-def audio_stop(logger):     
-    logger.info('Audio : stop')  
+def audio_stop(logger):
+    logger.info('Audio : stop')
     if os.name == 'nt': return
     subprocess.call(["mpc", "stop"])
     subprocess.call(["mpc", "clear"])
-    
-def update_myself(logger):     
-    logger.info('Updating myself')  
+
+def update_myself(logger):
+    logger.info('Updating myself')
     for file_name in UPDATE_URLS:
         with open(LIB_FOLDER_PATH + file_name, "wb") as file:
             response = requests.get(UPDATE_URLS[file_name])
             file.write(response.content)
-    
+
 class State:
     def __init__(self):
         self.latest_snooze_time        = 0
@@ -452,16 +455,16 @@ class State:
         self.previous_volume           = None
         self.config_save_requested     = False
         self.update_requested          = False
-        
+
     def snooze(self):
         self.latest_snooze_time = time.time()
 
     def discard(self):
         self.discard_requested = True
-        
+
     def request_update(self):
         self.update_requested = True
-        
+
 def main_loop(css_file_path, template_file_path):
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
@@ -469,24 +472,24 @@ def main_loop(css_file_path, template_file_path):
     logging_stdout = logging.StreamHandler(sys.stdout)
     logging_stdout.setFormatter(logging_formatter)
     logging_stdout.setLevel(logging.DEBUG)
-    logging_stderr = logging.StreamHandler(sys.stderr)   
-    logging_stderr.setFormatter(logging_formatter) 
+    logging_stderr = logging.StreamHandler(sys.stderr)
+    logging_stderr.setFormatter(logging_formatter)
     logging_stderr.setLevel(logging.ERROR)
     logger.addHandler(logging_stdout)
     logger.addHandler(logging_stderr)
-    
+
     logger.info('Starting daemon')
     logger.info('Templates are {0} {1}'.format(css_file_path, template_file_path) )
-    
+
     signal_handler = SignalHandler()
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     config = config_load(logger, CONFIG_FILE_PATH)
     # imediately save config to apply format updates
     config_save(logger, CONFIG_FILE_PATH, config)
-    
+
     state = State()
-    
+
     WebadminHandler.logger = logger
     WebadminHandler.config = config
     WebadminHandler.state = state
@@ -494,32 +497,32 @@ def main_loop(css_file_path, template_file_path):
         WebadminHandler.contents_stylesheet = file.read()
     with open(template_file_path, 'rb') as file:
         WebadminHandler.template_index = jinja2.Template(file.read().decode('utf-8'))
-    
+
     webadmin_server = http.server.HTTPServer( server_address=('', 80), RequestHandlerClass=WebadminHandler )
     webadmin_server.timeout = 0.1
 
     audio_stop(logger)
-    
-    while True:    
+
+    while True:
         now = time.time()
-        
+
         # Leave
         if signal_handler.must_leave:
             break
-                        
+
         # Run webadmin
         webadmin_server.handle_request()
-                
+
         # save config
         if state.config_save_requested and now > state.config_save_latest_tick + CONFIG_SAVE_PERIOD:
             state.config_save_requested = False
             state.config_save_latest_tick = now
             config_save(logger, CONFIG_FILE_PATH, config)
-            
+
         if DEVEL_MODE and state.update_requested:
             update_myself(logger)
             break
-                
+
         # Soundout
         if now > state.latest_soundout_tick + SOUNDOUT_PERIOD:
             state.latest_soundout_tick = now
@@ -539,7 +542,7 @@ def main_loop(css_file_path, template_file_path):
                 if new_volume != state.previous_volume:
                     state.previous_volume = new_volume
                     audio_set_volume( logger, new_volume )
-                
+
                 if new_timeslot_id != state.previous_timeslot_id:
                     state.previous_timeslot_id = new_timeslot_id
                     audio_set_playlist( logger, config.get_playlist_from_timeslot(current_timeslot) )
@@ -556,7 +559,7 @@ def main_loop(css_file_path, template_file_path):
             # Reset snooze
             if state.latest_snooze_time != 0 and state.latest_snooze_time + config.snooze_duration <= now:
                 state.latest_snooze_time = 0
-                    
+
     logger.info('Saving config')
     config_save(logger, CONFIG_FILE_PATH, config)
     logger.info('Exiting daemon')
