@@ -2,11 +2,11 @@
 <body>
 <h1>Clock-raspio</h1>
 
-<h2>Profile : {{config.current_profile_name}}</h2>
+<h2>Profile</h2>
 <form action="set_profile" method="POST">
 <select name="profile_name">
 {% for profile_name in config.profiles -%}
-<option value="{{profile_name}}">{{profile_name}}</option>
+<option value="{{profile_name}}" {% if profile_name == config.current_profile_name -%}selected="selected"{% endif -%} >{{profile_name}}</option>
 {% endfor -%}
 </select>
 <input type="submit" value="Set current profile">
@@ -25,15 +25,17 @@ Playlist : {{timeslot.playlist_name}}<br/>
 <form action="set_timezone" method="POST">
 <select name="timezone">
 {% for continent in timezone_list -%}{% for zone in timezone_list[continent] -%}
-{% if (continent+'/'+zone) == timezone_current -%}
-<option value="{{continent}}/{{zone}}" selected="selected">{{continent}} - {{zone}}</option>
-{% else -%}
-<option value="{{continent}}/{{zone}}">{{continent}} - {{zone}}</option>
-{% endif -%}
+<option value="{{continent}}/{{zone}}" {% if (continent+'/'+zone) == timezone_current -%}selected="selected"{% endif -%}>{{continent}} - {{zone}}</option>
 {% endfor -%}{% endfor -%}
 </select>
 <input type="submit" value="Set timezone">
 </form>
+
+<h2>Playlists</h2>
+
+{% for profile_name in config.profiles -%}
+<option value="{{profile_name}}" {% if profile_name == config.current_profile_name -%}selected="selected"{% endif -%} >{{profile_name}}</option>
+{% endfor -%}
 
 <h2>Actions</h2>
 <form action="/snooze" method="POST">

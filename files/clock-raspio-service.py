@@ -15,12 +15,16 @@ import requests
 import subprocess
 import re
 import cgi
+import urllib
+
 
 SOUNDOUT_PERIOD = 1
-CONFIG_SAVE_PERIOD = 30
+CONFIG_SAVE_PERIOD = 10
 DEVEL_MODE = True
-LIB_FOLDER_PATH = '/var/lib/clock-raspio/'
-SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
+#LIB_FOLDER_PATH = '/var/lib/clock-raspio/'
+#SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
+LIB_FOLDER_PATH = 'C:/Users/Gugli/Desktop/'
+SHARE_FOLDER_PATH = 'D:/Documents/Programmation/clock-raspio/files/share/'
 
 UPDATED_PROGRAM_FILE_NAME    = 'clock-raspio.py'
 UPDATED_CSS_FILE_NAME        = 'stylesheet.css'
@@ -37,6 +41,7 @@ CONFIG_FILE_PATH        = LIB_FOLDER_PATH + 'config.json'
 EXAMPLE_FILE_NAME       = 'wind-chimes_by_inspectorj.flac'
 CSS_FILE_PATH           = SHARE_FOLDER_PATH + 'stylesheet.css'
 TEMPLATE_FILE_PATH      = SHARE_FOLDER_PATH + 'template.html'
+FAVICON_FILE_PATH       = SHARE_FOLDER_PATH + 'favicon.ico'
 
 class SignalHandler:
     def __init__(self):
@@ -77,75 +82,92 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
     POST_UPDATE        = 2
     POST_SET_TIMEZONE  = 3
     POST_DISCARD       = 4
+    POST_SET_PROFILE   = 5
 
     GET_STYLESHEET      = 1
-    GET_INDEX           = 2
+    #GET_INDEX           = 2
+    GET_FAVICON         = 3
+    REDIRECT_TO_CONFIG  = 4
 
-    PATHS_FILES = '/files/'
+    PATHS_FILES  = '/files'
+    PATHS_CONFIG = '/config'
 
     PATHS_POST = {
         '/snooze'       : POST_SNOOZE,
         '/discard'      : POST_DISCARD,
         '/update'       : POST_UPDATE,
         '/set_timezone' : POST_SET_TIMEZONE,
+        '/set_profile'  : POST_SET_PROFILE,
     }
 
     PATHS_GET = {
         '/stylesheet.css'       : GET_STYLESHEET,
-        '/index.htm'            : GET_INDEX,
-        '/index.html'           : GET_INDEX,
-        '/'                     : GET_INDEX
+        '/favicon.ico'          : GET_FAVICON,
+        '/'                     : REDIRECT_TO_CONFIG
     }
-
 
     logger = None
     config = None
     state = None
     template_index = None
     contents_stylesheet = None
+    contents_favicon = None
 
     def log_message(self, format, *args):
         self.logger.info(format, *args)
 
     def do_GET(self):
-        if self.path in self.PATHS_GET:
+        path = urllib.parse.unquote(self.path)
+        if path in self.PATHS_GET:
             operation = self.PATHS_GET[self.path]
-            if operation == self.GET_STYLESHEET:
+            if operation == self.GET_STYLESHEET and self.contents_stylesheet:
                 self.send_response(200)
                 self.send_header('Content-type', 'text/css')
                 self.end_headers()
                 self.wfile.write(self.contents_stylesheet)
-            elif operation == self.GET_INDEX:
+            if operation == self.GET_FAVICON and self.contents_favicon:
                 self.send_response(200)
-                self.send_header('Content-type', 'text/html')
+                self.send_header('Content-type', 'text/css')
                 self.end_headers()
-                rendered_text = self.template_index.render(
-                    display_update_button = DEVEL_MODE,
-                    timezone_current = timezone_get(),
-                    timezone_list = timezone_list(),
-                    config = self.config,
-                    state = self.state
-                    )
-                self.wfile.write(rendered_text.encode('utf-8'))
-        elif self.path.startswith(self.PATHS_FILES):
-            subpath = self.path[len(self.PATHS_FILES)]
+                self.wfile.write(self.contents_favicon)
+            elif operation == self.REDIRECT_TO_CONFIG:
+                self.send_response(303)
+                self.send_header("Location", "/config")
+                self.end_headers()
+            else:
+                self.send_error(404)
+                self.end_headers()
+               
+        elif path.startswith(self.PATHS_CONFIG):        
+            subpath = path[len(self.PATHS_CONFIG)+1:]
+            path_params = subpath.split('/')
+            params = {}
+            for i in range(0, int(len(path_params)/2)): params[path_params[2*i]] = path_params[2*i+1]
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            rendered_text = self.template_index.render(
+                display_update_button = DEVEL_MODE,
+                timezone_current = timezone_get(),
+                timezone_list = timezone_list(),
+                config = self.config,
+                state = self.state,
+                params = params
+                )
+            self.wfile.write(rendered_text.encode('utf-8'))
+            
+        elif path.startswith(self.PATHS_FILES):        
+            subpath = path[len(self.PATHS_FILES)]
             self.send_response(200)
             self.end_headers()
         else:
             self.send_error(404)
             self.end_headers()
 
-    def do_HEAD(self):
-        if self.path in self.PATHS_GET:
-            self.send_response(200)
-            self.end_headers()
-        else:
-            self.send_error(404)
-            self.end_headers()
-
-    def do_POST(self):
-        if self.path in self.PATHS_POST:
-            operation = self.PATHS_POST[self.path]
+    def do_POST(self):    
+        path = urllib.parse.unquote(self.path)
+        if path in self.PATHS_POST:
+            operation = self.PATHS_POST[path]
             ctype, pdict = cgi.parse_header(self.headers.get('content-type'))
             postvars = {}
             if ctype == 'multipart/form-data':
@@ -153,7 +175,6 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
             elif ctype == 'application/x-www-form-urlencoded':
                 length = int(self.headers.get('content-length'))
                 postvars = cgi.parse_qs(self.rfile.read(length), keep_blank_values=1)
-            print(postvars)
 
             if operation == self.POST_SNOOZE:
                 self.state.snooze()
@@ -162,12 +183,19 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
             elif operation == self.POST_UPDATE:
                 self.state.request_update()
             elif operation == self.POST_SET_TIMEZONE and b'timezone' in postvars and len(postvars[b'timezone']) > 0:
+                self.log_message("Setting timezone")
                 timezone_set(postvars[b'timezone'][0].decode('utf-8'))
+            elif operation == self.POST_SET_PROFILE and b'profile_name' in postvars and len(postvars[b'profile_name']) > 0:
+                profile_name = postvars[b'profile_name'][0].decode('utf-8')
+                if profile_name in self.config.profiles:
+                    self.log_message("Switching profile to %s", profile_name)
+                    self.config.current_profile_name = profile_name
+                    self.state.config_save_requested = True
             self.send_response(303)
-            self.send_header("Location", "/")
+            self.send_header("Location", "/config")
             self.end_headers()
-        elif self.path.startswith(self.PATHS_FILES):
-            subpath = self.path[len(self.PATHS_FILES)]
+        elif path.startswith(self.PATHS_FILES):
+            subpath = path[len(self.PATHS_FILES):]
             self.send_response(200)
             self.end_headers()
         else:
@@ -406,6 +434,7 @@ def config_load(logger, path):
 
 
 def config_save(logger, path, config):
+    logger.info('Config saved to %s', path)
     with open(path, "w") as file:
         config_encoder = ConfigEncoder()
         dct = config_encoder(config)
@@ -497,7 +526,11 @@ def main_loop(css_file_path, template_file_path):
         WebadminHandler.contents_stylesheet = file.read()
     with open(template_file_path, 'rb') as file:
         WebadminHandler.template_index = jinja2.Template(file.read().decode('utf-8'))
-
+    try:
+        with open(FAVICON_FILE_PATH, 'rb') as file:
+            WebadminHandler.contents_favicon = file.read()
+    except: pass
+    
     webadmin_server = http.server.HTTPServer( server_address=('', 80), RequestHandlerClass=WebadminHandler )
     webadmin_server.timeout = 0.1
 
