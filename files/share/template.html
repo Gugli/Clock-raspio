@@ -1,9 +1,42 @@
 <html>
 <body>
-<h1>Clock-raspio</h1>
+<h1><a href="/">Clock-raspio</a></h1>
 
+{% if 'playlist' in params and params.playlist %}
+
+<form action="/playlist_rename" method="POST">
+<input type="hidden" value="{{params.playlist}}" name="playlist_name">
+<input type="text" value="{{params.playlist}}" name="playlist_new_name">
+<input type="submit" value="Rename">
+</form>
+
+<table>
+{% for item in config.playlists[params.playlist].items %}
+<tr><td>{{item}}</td>
+<td>
+<form action="/playlist_remove_item" method="POST">
+<input type="hidden" value="{{params.playlist}}" name="playlist_name">
+<input type="hidden" value="{{item}}" name="item">
+<input type="submit" value="Remove">
+</form></td>
+</tr>
+{% endfor %}
+</table>
+
+<form action="/playlist_add_item" method="POST">
+<input type="hidden" value="{{params.playlist}}" name="playlist_name">
+<input type="text" value="Url" name="item">
+<input type="submit" value="Add Url">
+</form>
+
+<form action="/playlist_delete" method="POST">
+<input type="hidden" value="{{params.playlist}}" name="playlist_name">
+<input type="submit" value="Delete playlist">
+</form>
+
+{% else %}
 <h2>Profile</h2>
-<form action="set_profile" method="POST">
+<form action="/set_profile" method="POST">
 <select name="profile_name">
 {% for profile_name in config.profiles -%}
 <option value="{{profile_name}}" {% if profile_name == config.current_profile_name -%}selected="selected"{% endif -%} >{{profile_name}}</option>
@@ -21,8 +54,20 @@ Fade-in duration : {{timeslot.fade_in_duration}}<br/>
 Playlist : {{timeslot.playlist_name}}<br/>
 {% endfor %}
 
+<h2>Playlists</h2>
+
+<table>
+{% for playlist_name in config.playlists -%}
+<tr><td><a href="/config/playlist/{{playlist_name}}" >{{playlist_name}}</a></td><td>{{ config.playlists[playlist_name].items | length}} items</td></tr>
+{% endfor -%}
+</table>
+<form action="/playlist_new" method="POST">
+<input type="text" value="New playlist" name="playlist_name">
+<input type="submit" value="Add">
+</form>
+
 <h2>Timzones</h2>
-<form action="set_timezone" method="POST">
+<form action="/set_timezone" method="POST">
 <select name="timezone">
 {% for continent in timezone_list -%}{% for zone in timezone_list[continent] -%}
 <option value="{{continent}}/{{zone}}" {% if (continent+'/'+zone) == timezone_current -%}selected="selected"{% endif -%}>{{continent}} - {{zone}}</option>
@@ -30,12 +75,6 @@ Playlist : {{timeslot.playlist_name}}<br/>
 </select>
 <input type="submit" value="Set timezone">
 </form>
-
-<h2>Playlists</h2>
-
-{% for profile_name in config.profiles -%}
-<option value="{{profile_name}}" {% if profile_name == config.current_profile_name -%}selected="selected"{% endif -%} >{{profile_name}}</option>
-{% endfor -%}
 
 <h2>Actions</h2>
 <form action="/snooze" method="POST">
@@ -50,6 +89,7 @@ Playlist : {{timeslot.playlist_name}}<br/>
 <form action="/update" method="POST">
 <input type="submit" value="Install updates and restart">
 </form>
+{% endif %}
 {% endif %}
 </body>
 </html>

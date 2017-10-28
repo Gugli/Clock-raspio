@@ -6,14 +6,12 @@ import os
 import logging
 import sys
 import json
-import pickle
 import shutil
 import datetime
 import jinja2
 import hashlib
 import requests
 import subprocess
-import re
 import cgi
 import urllib
 
@@ -23,8 +21,8 @@ CONFIG_SAVE_PERIOD = 10
 DEVEL_MODE = True
 #LIB_FOLDER_PATH = '/var/lib/clock-raspio/'
 #SHARE_FOLDER_PATH = '/usr/share/clock-raspio/'
-LIB_FOLDER_PATH = 'C:/Users/Gugli/Desktop/'
-SHARE_FOLDER_PATH = 'D:/Documents/Programmation/clock-raspio/files/share/'
+LIB_FOLDER_PATH = '/home/gugliels/.clock-raspio/'
+SHARE_FOLDER_PATH = '/home/gugliels/Code/clock-raspio/files/share/'
 
 UPDATED_PROGRAM_FILE_NAME    = 'clock-raspio.py'
 UPDATED_CSS_FILE_NAME        = 'stylesheet.css'
@@ -38,6 +36,7 @@ UPDATE_URLS = {
 
 
 CONFIG_FILE_PATH        = LIB_FOLDER_PATH + 'config.json'
+FILES_FOLDER_PATH        = LIB_FOLDER_PATH + 'files/'
 EXAMPLE_FILE_NAME       = 'wind-chimes_by_inspectorj.flac'
 CSS_FILE_PATH           = SHARE_FOLDER_PATH + 'stylesheet.css'
 TEMPLATE_FILE_PATH      = SHARE_FOLDER_PATH + 'template.html'
@@ -83,6 +82,11 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
     POST_SET_TIMEZONE  = 3
     POST_DISCARD       = 4
     POST_SET_PROFILE   = 5
+    POST_PLAYLIST_NEW   = 6
+    POST_PLAYLIST_RENAME   = 7
+    POST_PLAYLIST_ADD_ITEM   = 8
+    POST_PLAYLIST_REMOVE_ITEM   = 9
+    POST_PLAYLIST_DELETE   = 10
 
     GET_STYLESHEET      = 1
     #GET_INDEX           = 2
@@ -93,11 +97,16 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
     PATHS_CONFIG = '/config'
 
     PATHS_POST = {
-        '/snooze'       : POST_SNOOZE,
-        '/discard'      : POST_DISCARD,
-        '/update'       : POST_UPDATE,
+        '/snooze'            : POST_SNOOZE,
+        '/discard'          : POST_DISCARD,
+        '/update'            : POST_UPDATE,
         '/set_timezone' : POST_SET_TIMEZONE,
-        '/set_profile'  : POST_SET_PROFILE,
+        '/set_profile'   : POST_SET_PROFILE,
+        '/playlist_new' : POST_PLAYLIST_NEW,
+        '/playlist_rename' : POST_PLAYLIST_RENAME,
+        '/playlist_add_item' : POST_PLAYLIST_ADD_ITEM,
+        '/playlist_remove_item' : POST_PLAYLIST_REMOVE_ITEM,
+        '/playlist_delete' : POST_PLAYLIST_DELETE,
     }
 
     PATHS_GET = {
@@ -157,13 +166,26 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(rendered_text.encode('utf-8'))
             
         elif path.startswith(self.PATHS_FILES):        
-            subpath = path[len(self.PATHS_FILES)]
-            self.send_response(200)
-            self.end_headers()
+            subpath = path[len(self.PATHS_FILES)+1:]
+            filepath = FILES_FOLDER_PATH+subpath
+            try:
+                with open(filepath, 'rb') as file:
+                    self.wfile.write( file.read() )                    
+                self.send_response(200)
+                self.end_headers()
+                self.log_message("Sent file %s",  filepath)
+            except:                 
+                self.send_error(404)
+                self.end_headers()
+                pass
         else:
             self.send_error(404)
             self.end_headers()
 
+    def get_post_var(self,  postvars,  name):
+        if name in postvars and len(postvars[name]) > 0: return postvars[name][0].decode('utf-8')
+        return ""
+        
     def do_POST(self):    
         path = urllib.parse.unquote(self.path)
         if path in self.PATHS_POST:
@@ -176,28 +198,65 @@ class WebadminHandler(http.server.BaseHTTPRequestHandler):
                 length = int(self.headers.get('content-length'))
                 postvars = cgi.parse_qs(self.rfile.read(length), keep_blank_values=1)
 
+            playlist_name = self.get_post_var(postvars, b'playlist_name')
+            profile_name = self.get_post_var(postvars, b'profile_name')
+            timezone = self.get_post_var(postvars, b'timezone')
+            
             if operation == self.POST_SNOOZE:
                 self.state.snooze()
             elif operation == self.POST_DISCARD:
                 self.state.discard()
             elif operation == self.POST_UPDATE:
                 self.state.request_update()
-            elif operation == self.POST_SET_TIMEZONE and b'timezone' in postvars and len(postvars[b'timezone']) > 0:
+            elif operation == self.POST_SET_TIMEZONE and len(timezone) > 0:
                 self.log_message("Setting timezone")
-                timezone_set(postvars[b'timezone'][0].decode('utf-8'))
-            elif operation == self.POST_SET_PROFILE and b'profile_name' in postvars and len(postvars[b'profile_name']) > 0:
-                profile_name = postvars[b'profile_name'][0].decode('utf-8')
+                timezone_set(timezone)
+            elif operation == self.POST_SET_PROFILE and len(profile_name) > 0:
                 if profile_name in self.config.profiles:
                     self.log_message("Switching profile to %s", profile_name)
                     self.config.current_profile_name = profile_name
                     self.state.config_save_requested = True
+                    
+            elif operation == self.POST_PLAYLIST_NEW  :
+                if not playlist_name in self.config.playlists :
+                    self.config.playlists[playlist_name] = ConfigPlaylist()
+                    self.state.config_save_requested = True
+                
+            elif operation == self.POST_PLAYLIST_RENAME  :
+                playlist_new_name = self.get_post_var(postvars, b'playlist_new_name')
+                self.config.playlists[playlist_new_name] = self.config.playlists.pop(playlist_name)
+                self.state.config_save_requested = True
+            
+            elif operation ==self. POST_PLAYLIST_ADD_ITEM :
+                item = self.get_post_var(postvars, b'item')
+                self.config.playlists[playlist_name].items.append(item)
+                self.state.config_save_requested = True
+                
+            elif operation == self.POST_PLAYLIST_REMOVE_ITEM   :
+                item = self.get_post_var(postvars, b'item')
+                self.config.playlists[playlist_name].items.remove(item)
+                self.state.config_save_requested = True
+                
+            elif operation == self.POST_PLAYLIST_DELETE  :
+                self.config.playlists.pop(playlist_name)
+                self.state.config_save_requested = True
+    
             self.send_response(303)
             self.send_header("Location", "/config")
             self.end_headers()
         elif path.startswith(self.PATHS_FILES):
-            subpath = path[len(self.PATHS_FILES):]
-            self.send_response(200)
-            self.end_headers()
+            subpath = path[len(self.PATHS_FILES)+1:]
+            filepath = FILES_FOLDER_PATH+subpath
+            try:
+                with open(filepath, 'wb') as file:
+                    file.write( self.rfile.read() )                  
+                self.send_response(200)
+                self.end_headers()
+                self.log_message("Recieved file %s",  filepath)
+            except:                 
+                self.send_error(500)
+                self.end_headers()
+                pass
         else:
             self.send_error(404)
             self.end_headers()
